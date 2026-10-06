@@ -85,6 +85,24 @@ and `aborted`.
 - Completed and aborted runs are immutable.
 - A run can carry at most 500 observations.
 
+### Entity Extension Fields
+
+Supervisors register custom fields for formulas, vessels, or runs. Each active
+definition has a unique normalized name within its entity type, one of
+`text`, `number`, `boolean`, or `date` types, a required flag, and a revision.
+
+- Creates and custom-field patches validate values against the definitions
+  active in the same atomic snapshot update.
+- Required active fields must be present before an entity is modified through
+  any lifecycle write.
+- Field revisions are optimistic concurrency boundaries; stale publications
+  fail with `revision_conflict`.
+- Definitions can be deactivated but are retained so historical values remain
+  readable in detail, list, and restart-loaded data.
+- Each stored value records its type and definition revision. A field that has
+  ever held a value cannot change type, preventing silent reinterpretation of
+  historical data.
+
 ### GravityObservation
 
 An observation contains a run identifier, contiguous sequence number, observed
@@ -217,6 +235,7 @@ behavior, and exit without external services:
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check extension-fields`
 
 ## Scope Limits
 

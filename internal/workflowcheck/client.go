@@ -35,6 +35,16 @@ func (c *client) call(
 	payload any,
 	expectedVersion *int64,
 ) (response, error) {
+	return c.callWithRevision(method, path, payload, expectedVersion, nil)
+}
+
+func (c *client) callWithRevision(
+	method string,
+	path string,
+	payload any,
+	expectedVersion *int64,
+	expectedRevision *int64,
+) (response, error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -52,6 +62,9 @@ func (c *client) call(
 	}
 	if expectedVersion != nil {
 		request.Header.Set("X-Expected-Version", fmt.Sprintf("%d", *expectedVersion))
+	}
+	if expectedRevision != nil {
+		request.Header.Set("X-Expected-Revision", fmt.Sprintf("%d", *expectedRevision))
 	}
 	raw, err := c.http.Do(request)
 	if err != nil {

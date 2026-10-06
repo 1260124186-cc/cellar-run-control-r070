@@ -8,10 +8,11 @@ import (
 )
 
 type createRunRequest struct {
-	Code           string  `json:"code"`
-	FormulaID      string  `json:"formula_id"`
-	PlannedVolumeL float64 `json:"planned_volume_liters"`
-	Notes          string  `json:"notes"`
+	Code           string         `json:"code"`
+	FormulaID      string         `json:"formula_id"`
+	PlannedVolumeL float64        `json:"planned_volume_liters"`
+	Notes          string         `json:"notes"`
+	CustomFields   map[string]any `json:"custom_fields"`
 }
 
 type reserveRunRequest struct {
@@ -37,6 +38,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 			FormulaID:      body.FormulaID,
 			PlannedVolumeL: body.PlannedVolumeL,
 			Notes:          body.Notes,
+			CustomFields:   body.CustomFields,
 		})
 		if err != nil {
 			writeDomainError(response, err)
@@ -56,6 +58,24 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("GET /v1/runs/{id}", func(response http.ResponseWriter, request *http.Request) {
 		run, err := app.GetRun(request.PathValue("id"))
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, run)
+	})
+
+	mux.HandleFunc("PATCH /v1/runs/{id}/custom-fields", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[patchCustomFieldsRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		run, err := app.PatchRunCustomFields(request.PathValue("id"),
+			service.PatchCustomFieldsInput{ExpectedVersion: expected, Fields: body.CustomFields})
 		if err != nil {
 			writeDomainError(response, err)
 			return

@@ -21,6 +21,9 @@ const (
 	CodeRunConflict         Code = "run_code_conflict"
 	CodeRunState            Code = "invalid_run_state"
 	CodeObservationConflict Code = "observation_conflict"
+	CodeExtensionConflict   Code = "extension_field_conflict"
+	CodeExtensionNotFound   Code = "extension_field_not_found"
+	CodeExtensionState      Code = "invalid_extension_field_state"
 	CodeRevisionConflict    Code = "revision_conflict"
 	CodeStorage             Code = "storage_error"
 )

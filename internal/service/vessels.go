@@ -30,6 +30,11 @@ func (s *Service) CreateVessel(input CreateVesselInput) (domain.Vessel, error) {
 			return domain.NewError(domain.CodeVesselConflict,
 				"a vessel with the same code already exists")
 		}
+		customFields, err := s.buildCustomFieldValues(domain.EntityVessel, input.CustomFields, *snapshot)
+		if err != nil {
+			return err
+		}
+		vessel.CustomFields = customFields
 		snapshot.Vessels[vessel.ID] = vessel
 		snapshot.VesselIndex[vessel.Code] = vessel.ID
 		return nil
@@ -47,7 +52,7 @@ func (s *Service) GetVessel(id string) (domain.Vessel, error) {
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 		}
-		found = vessel
+		found = vessel.Clone()
 		return nil
 	})
 	if err != nil {
@@ -61,7 +66,7 @@ func (s *Service) ListVessels() ([]domain.Vessel, error) {
 	err := s.store.View(func(snapshot domain.Snapshot) error {
 		vessels = make([]domain.Vessel, 0, len(snapshot.Vessels))
 		for _, vessel := range snapshot.Vessels {
-			vessels = append(vessels, vessel)
+			vessels = append(vessels, vessel.Clone())
 		}
 		return nil
 	})
@@ -77,6 +82,41 @@ func (s *Service) ListVessels() ([]domain.Vessel, error) {
 	return vessels, nil
 }
 
+func (s *Service) PatchVesselCustomFields(
+	id string,
+	input PatchCustomFieldsInput,
+) (domain.Vessel, error) {
+	var updated domain.Vessel
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		vessel, ok := snapshot.Vessels[id]
+		if !ok {
+			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
+		}
+		if err := s.checkExpected(vessel.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if vessel.State == domain.VesselRetired {
+			return domain.NewError(domain.CodeVesselState,
+				"extension fields cannot be modified after the vessel is retired")
+		}
+		values, err := s.patchCustomFieldValues(vessel.CustomFields, input.Fields,
+			domain.EntityVessel, *snapshot)
+		if err != nil {
+			return err
+		}
+		vessel.CustomFields = values
+		vessel.UpdatedAt = s.clock.Now()
+		vessel.Version++
+		snapshot.Vessels[id] = vessel
+		updated = vessel.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.Vessel{}, err
+	}
+	return updated, nil
+}
+
 func (s *Service) FinishCleaning(
 	id string,
 	input FinishCleaningInput,
@@ -88,6 +128,10 @@ func (s *Service) FinishCleaning(
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 		}
 		if err := s.checkExpected(vessel.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if err := domain.ValidateCustomFields(domain.EntityVessel,
+			vessel.CustomFields, snapshot.ExtensionFields); err != nil {
 			return err
 		}
 		if vessel.ActiveRunID == nil {
@@ -107,7 +151,7 @@ func (s *Service) FinishCleaning(
 			return err
 		}
 		snapshot.Vessels[id] = vessel
-		updated = vessel
+		updated = vessel.Clone()
 		return nil
 	})
 	if err != nil {
@@ -126,11 +170,15 @@ func (s *Service) RetireVessel(id string, input VersionInput) (domain.Vessel, er
 		if err := s.checkExpected(vessel.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityVessel,
+			vessel.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		if err := vessel.Retire(s.clock.Now()); err != nil {
 			return err
 		}
 		snapshot.Vessels[id] = vessel
-		updated = vessel
+		updated = vessel.Clone()
 		return nil
 	})
 	if err != nil {

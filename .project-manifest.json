@@ -113,6 +113,26 @@
         "domain",
         "storage"
       ]
+    },
+    {
+      "id": "extension-fields",
+      "name": "Register, publish, deactivate, and preserve entity extension fields",
+      "entry": "POST /v1/extension-fields",
+      "steps": [
+        "define required custom fields for formulas, vessels, and runs",
+        "validate creates, patches, lifecycle writes, and stale publications",
+        "deactivate a field and retain historical typed values",
+        "restart from the snapshot and verify detail and list responses"
+      ],
+      "success": "current definitions govern writes while historical values remain readable",
+      "failure": "returns stable validation, duplicate, type-safety, or revision errors",
+      "verification": "the check issues real HTTP requests, exercises concurrency, and reloads the snapshot",
+      "module_ids": [
+        "httpapi",
+        "service",
+        "domain",
+        "storage"
+      ]
     }
   ]
 }

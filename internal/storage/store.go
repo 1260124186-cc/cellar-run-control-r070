@@ -69,6 +69,9 @@ func normalizeSnapshot(value domain.Snapshot) (domain.Snapshot, error) {
 	if value.Runs == nil {
 		value.Runs = map[string]domain.FermentationRun{}
 	}
+	if value.ExtensionFields == nil {
+		value.ExtensionFields = map[string]domain.ExtensionFieldDefinition{}
+	}
 	if value.NameIndex == nil {
 		value.NameIndex = map[string]string{}
 	}
@@ -78,10 +81,121 @@ func normalizeSnapshot(value domain.Snapshot) (domain.Snapshot, error) {
 	if value.RunIndex == nil {
 		value.RunIndex = map[string]string{}
 	}
+	if err := validateExtensionDefinitions(value.ExtensionFields); err != nil {
+		return domain.Snapshot{}, err
+	}
+	if err := validateStoredCustomFields(value); err != nil {
+		return domain.Snapshot{}, err
+	}
+	markDefinitionsUsed(&value)
 	if err := validateIndexes(value); err != nil {
 		return domain.Snapshot{}, err
 	}
 	return value, nil
+}
+
+func validateExtensionDefinitions(definitions map[string]domain.ExtensionFieldDefinition) error {
+	names := make(map[string]string, len(definitions))
+	activeNames := make(map[string]string, len(definitions))
+	for id, definition := range definitions {
+		if definition.ID != id {
+			return fmt.Errorf("extension field %s has a mismatched identifier", id)
+		}
+		if err := definition.Validate(); err != nil {
+			return fmt.Errorf("extension field %s is invalid: %w", id, err)
+		}
+		nameKey := string(definition.EntityType) + "\x00" + domain.NameKey(definition.Name)
+		if existing, found := names[nameKey]; found && existing != id {
+			return fmt.Errorf("extension field name %q is duplicated", definition.Name)
+		}
+		names[nameKey] = id
+		if definition.Active {
+			if existing, found := activeNames[nameKey]; found && existing != id {
+				return fmt.Errorf("active extension field name %q is duplicated", definition.Name)
+			}
+			activeNames[nameKey] = id
+		}
+	}
+	return nil
+}
+
+func validateStoredCustomFields(value domain.Snapshot) error {
+	for id, formula := range value.Formulas {
+		if err := validateEntityCustomFields(string(domain.EntityFormula), id,
+			formula.CustomFields, value.ExtensionFields); err != nil {
+			return err
+		}
+	}
+	for id, vessel := range value.Vessels {
+		if err := validateEntityCustomFields(string(domain.EntityVessel), id,
+			vessel.CustomFields, value.ExtensionFields); err != nil {
+			return err
+		}
+	}
+	for id, run := range value.Runs {
+		if err := validateEntityCustomFields(string(domain.EntityRun), id,
+			run.CustomFields, value.ExtensionFields); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateEntityCustomFields(
+	entityType string,
+	entityID string,
+	values map[string]domain.CustomFieldValue,
+	definitions map[string]domain.ExtensionFieldDefinition,
+) error {
+	for fieldID, stored := range values {
+		definition, ok := definitions[fieldID]
+		if !ok {
+			return fmt.Errorf("%s %s references missing extension field %s",
+				entityType, entityID, fieldID)
+		}
+		if string(definition.EntityType) != entityType {
+			return fmt.Errorf("%s %s references extension field for another entity type",
+				entityType, entityID)
+		}
+		if stored.DefinitionRevision < 1 || stored.DefinitionRevision > definition.Revision {
+			return fmt.Errorf("%s %s references invalid revision for extension field %s",
+				entityType, entityID, fieldID)
+		}
+		if !stored.Type.Valid() {
+			return fmt.Errorf("%s %s contains an unreadable extension value type",
+				entityType, entityID)
+		}
+		if err := domain.ValidateCustomValue(stored.Value, stored.Type); err != nil {
+			return fmt.Errorf("%s %s has invalid extension field %s: %w",
+				entityType, entityID, fieldID, err)
+		}
+	}
+	return nil
+}
+
+func markDefinitionsUsed(value *domain.Snapshot) {
+	used := make(map[string]struct{})
+	for _, formula := range value.Formulas {
+		for fieldID := range formula.CustomFields {
+			used[fieldID] = struct{}{}
+		}
+	}
+	for _, vessel := range value.Vessels {
+		for fieldID := range vessel.CustomFields {
+			used[fieldID] = struct{}{}
+		}
+	}
+	for _, run := range value.Runs {
+		for fieldID := range run.CustomFields {
+			used[fieldID] = struct{}{}
+		}
+	}
+	for fieldID := range used {
+		if definition, ok := value.ExtensionFields[fieldID]; ok && !definition.Used {
+			definition.Used = true
+			value.ExtensionFields[fieldID] = definition
+		}
+	}
 }
 
 func validateIndexes(value domain.Snapshot) error {

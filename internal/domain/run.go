@@ -14,25 +14,27 @@ const (
 )
 
 type FermentationRun struct {
-	ID             string               `json:"id"`
-	Code           string               `json:"code"`
-	FormulaID      string               `json:"formula_id"`
-	VesselID       *string              `json:"vessel_id,omitempty"`
-	PlannedVolumeL float64              `json:"planned_volume_liters"`
-	Notes          string               `json:"notes,omitempty"`
-	State          RunState             `json:"state"`
-	StartedAt      *time.Time           `json:"started_at,omitempty"`
-	EndedAt        *time.Time           `json:"ended_at,omitempty"`
-	Observations   []GravityObservation `json:"observations"`
-	Metrics        *RunMetrics          `json:"metrics,omitempty"`
-	Version        int64                `json:"version"`
-	CreatedAt      time.Time            `json:"created_at"`
-	UpdatedAt      time.Time            `json:"updated_at"`
+	ID             string                      `json:"id"`
+	Code           string                      `json:"code"`
+	FormulaID      string                      `json:"formula_id"`
+	VesselID       *string                     `json:"vessel_id,omitempty"`
+	PlannedVolumeL float64                     `json:"planned_volume_liters"`
+	Notes          string                      `json:"notes,omitempty"`
+	State          RunState                    `json:"state"`
+	CustomFields   map[string]CustomFieldValue `json:"custom_fields,omitempty"`
+	StartedAt      *time.Time                  `json:"started_at,omitempty"`
+	EndedAt        *time.Time                  `json:"ended_at,omitempty"`
+	Observations   []GravityObservation        `json:"observations"`
+	Metrics        *RunMetrics                 `json:"metrics,omitempty"`
+	Version        int64                       `json:"version"`
+	CreatedAt      time.Time                   `json:"created_at"`
+	UpdatedAt      time.Time                   `json:"updated_at"`
 }
 
 func (r FermentationRun) Clone() FermentationRun {
 	cloned := r
 	cloned.Observations = append([]GravityObservation(nil), r.Observations...)
+	cloned.CustomFields = CloneCustomFieldValues(r.CustomFields)
 	if r.VesselID != nil {
 		value := *r.VesselID
 		cloned.VesselID = &value

@@ -22,26 +22,28 @@ type FormulaStep struct {
 }
 
 type Formula struct {
-	ID                    string        `json:"id"`
-	Name                  string        `json:"name"`
-	Style                 string        `json:"style"`
-	TargetOriginalGravity float64       `json:"target_original_gravity"`
-	TargetFinalGravity    float64       `json:"target_final_gravity"`
-	MaxFermentationTempC  float64       `json:"max_fermentation_temp_c"`
-	MinimumDays           int           `json:"minimum_days"`
-	MaximumDays           int           `json:"maximum_days"`
-	Steps                 []FormulaStep `json:"steps"`
-	State                 FormulaState  `json:"state"`
-	Version               int64         `json:"version"`
-	CreatedAt             time.Time     `json:"created_at"`
-	UpdatedAt             time.Time     `json:"updated_at"`
-	ApprovedAt            *time.Time    `json:"approved_at,omitempty"`
-	RetiredAt             *time.Time    `json:"retired_at,omitempty"`
+	ID                    string                      `json:"id"`
+	Name                  string                      `json:"name"`
+	Style                 string                      `json:"style"`
+	TargetOriginalGravity float64                     `json:"target_original_gravity"`
+	TargetFinalGravity    float64                     `json:"target_final_gravity"`
+	MaxFermentationTempC  float64                     `json:"max_fermentation_temp_c"`
+	MinimumDays           int                         `json:"minimum_days"`
+	MaximumDays           int                         `json:"maximum_days"`
+	Steps                 []FormulaStep               `json:"steps"`
+	CustomFields          map[string]CustomFieldValue `json:"custom_fields,omitempty"`
+	State                 FormulaState                `json:"state"`
+	Version               int64                       `json:"version"`
+	CreatedAt             time.Time                   `json:"created_at"`
+	UpdatedAt             time.Time                   `json:"updated_at"`
+	ApprovedAt            *time.Time                  `json:"approved_at,omitempty"`
+	RetiredAt             *time.Time                  `json:"retired_at,omitempty"`
 }
 
 func (f Formula) Clone() Formula {
 	cloned := f
 	cloned.Steps = append([]FormulaStep(nil), f.Steps...)
+	cloned.CustomFields = CloneCustomFieldValues(f.CustomFields)
 	return cloned
 }
 

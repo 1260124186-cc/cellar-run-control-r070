@@ -70,6 +70,7 @@ Formula workflow:
 - `POST /v1/formulas`
 - `GET /v1/formulas`
 - `GET /v1/formulas/{id}`
+- `PATCH /v1/formulas/{id}/custom-fields`
 - `PUT /v1/formulas/{id}/steps`
 - `POST /v1/formulas/{id}/approve`
 - `POST /v1/formulas/{id}/retire`
@@ -79,6 +80,7 @@ Vessel workflow:
 - `POST /v1/vessels`
 - `GET /v1/vessels`
 - `GET /v1/vessels/{id}`
+- `PATCH /v1/vessels/{id}/custom-fields`
 - `POST /v1/vessels/{id}/finish-cleaning`
 - `POST /v1/vessels/{id}/retire`
 
@@ -87,12 +89,28 @@ Run workflow:
 - `POST /v1/runs`
 - `GET /v1/runs`
 - `GET /v1/runs/{id}`
+- `PATCH /v1/runs/{id}/custom-fields`
 - `POST /v1/runs/{id}/reserve`
 - `POST /v1/runs/{id}/start`
 - `POST /v1/runs/{id}/observations`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `POST /v1/runs/{id}/abort`
+
+Supervisor extension-field registry:
+
+- `POST /v1/extension-fields`
+- `GET /v1/extension-fields?entity_type=formula|vessel|run`
+- `GET /v1/extension-fields/{id}`
+- `PUT /v1/extension-fields/{id}`
+- `POST /v1/extension-fields/{id}/deactivate`
+
+Formula and vessel records also accept `PATCH /v1/formulas/{id}/custom-fields`
+and `PATCH /v1/vessels/{id}/custom-fields`. Field-definition revisions use the
+`X-Expected-Revision` header. Custom fields support `text`, `number`,
+`boolean`, and RFC3339 `date` values. Stored values retain the definition
+revision and type under which they were written; inactive definitions remain
+readable for historical records, and a used field cannot silently change type.
 
 Writes accept an optional `X-Expected-Version` header. Errors use a stable
 shape:
@@ -115,6 +133,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check extension-fields
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP

@@ -13,14 +13,25 @@ const (
 )
 
 type Vessel struct {
-	ID          string      `json:"id"`
-	Code        string      `json:"code"`
-	CapacityL   float64     `json:"capacity_liters"`
-	State       VesselState `json:"state"`
-	ActiveRunID *string     `json:"active_run_id,omitempty"`
-	Version     int64       `json:"version"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	ID           string                      `json:"id"`
+	Code         string                      `json:"code"`
+	CapacityL    float64                     `json:"capacity_liters"`
+	State        VesselState                 `json:"state"`
+	ActiveRunID  *string                     `json:"active_run_id,omitempty"`
+	CustomFields map[string]CustomFieldValue `json:"custom_fields,omitempty"`
+	Version      int64                       `json:"version"`
+	CreatedAt    time.Time                   `json:"created_at"`
+	UpdatedAt    time.Time                   `json:"updated_at"`
+}
+
+func (v Vessel) Clone() Vessel {
+	cloned := v
+	cloned.CustomFields = CloneCustomFieldValues(v.CustomFields)
+	if v.ActiveRunID != nil {
+		value := *v.ActiveRunID
+		cloned.ActiveRunID = &value
+	}
+	return cloned
 }
 
 func (v Vessel) Validate() error {

@@ -45,6 +45,11 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 			return domain.NewError(domain.CodeFormulaState,
 				"run requires an approved formula")
 		}
+		customFields, err := s.buildCustomFieldValues(domain.EntityRun, input.CustomFields, *snapshot)
+		if err != nil {
+			return err
+		}
+		run.CustomFields = customFields
 		if _, exists := snapshot.RunIndex[run.Code]; exists {
 			return domain.NewError(domain.CodeRunConflict,
 				"a run with the same code already exists")
@@ -57,6 +62,41 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 		return domain.FermentationRun{}, err
 	}
 	return run.Clone(), nil
+}
+
+func (s *Service) PatchRunCustomFields(
+	id string,
+	input PatchCustomFieldsInput,
+) (domain.FermentationRun, error) {
+	var updated domain.FermentationRun
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		run, ok := snapshot.Runs[id]
+		if !ok {
+			return domain.NewError(domain.CodeRunNotFound, "run was not found")
+		}
+		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if run.State == domain.RunCompleted || run.State == domain.RunAborted {
+			return domain.NewError(domain.CodeRunState,
+				"extension fields cannot be modified after the run is closed")
+		}
+		values, err := s.patchCustomFieldValues(run.CustomFields, input.Fields,
+			domain.EntityRun, *snapshot)
+		if err != nil {
+			return err
+		}
+		run.CustomFields = values
+		run.UpdatedAt = s.clock.Now()
+		run.Version++
+		snapshot.Runs[id] = run.Clone()
+		updated = run.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.FermentationRun{}, err
+	}
+	return updated, nil
 }
 
 func (s *Service) ReserveRun(
@@ -73,6 +113,10 @@ func (s *Service) ReserveRun(
 		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		vessel, ok := snapshot.Vessels[input.VesselID]
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
@@ -80,6 +124,10 @@ func (s *Service) ReserveRun(
 		if run.PlannedVolumeL > vessel.CapacityL {
 			return domain.FieldError(domain.CodeInvalidInput,
 				"planned_volume_liters", "exceeds vessel capacity")
+		}
+		if err := domain.ValidateCustomFields(domain.EntityVessel,
+			vessel.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
 		}
 		if err := vessel.Reserve(run.ID, s.clock.Now()); err != nil {
 			return err
@@ -90,7 +138,7 @@ func (s *Service) ReserveRun(
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
 		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updatedVessel = vessel.Clone()
 		return nil
 	})
 	if err != nil {
@@ -113,12 +161,20 @@ func (s *Service) StartRun(
 		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		if run.VesselID == nil {
 			return domain.NewError(domain.CodeRunState, "run has no vessel")
 		}
 		vessel, ok := snapshot.Vessels[*run.VesselID]
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
+		}
+		if err := domain.ValidateCustomFields(domain.EntityVessel,
+			vessel.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
 		}
 		if err := vessel.StartRun(run.ID, s.clock.Now()); err != nil {
 			return err
@@ -129,7 +185,7 @@ func (s *Service) StartRun(
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
 		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updatedVessel = vessel.Clone()
 		return nil
 	})
 	if err != nil {
@@ -152,6 +208,10 @@ func (s *Service) AbortRun(
 		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		hadStarted := run.HadStarted()
 		if err := run.Abort(s.clock.Now()); err != nil {
 			return err
@@ -161,6 +221,10 @@ func (s *Service) AbortRun(
 			if !ok {
 				return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 			}
+			if err := domain.ValidateCustomFields(domain.EntityVessel,
+				vessel.CustomFields, snapshot.ExtensionFields); err != nil {
+				return err
+			}
 			if hadStarted {
 				if err := vessel.StartCleaning(run.ID, s.clock.Now()); err != nil {
 					return err
@@ -169,7 +233,7 @@ func (s *Service) AbortRun(
 				return err
 			}
 			snapshot.Vessels[vessel.ID] = vessel
-			updatedVessel = vessel
+			updatedVessel = vessel.Clone()
 		}
 		snapshot.Runs[id] = run.Clone()
 		updatedRun = run.Clone()

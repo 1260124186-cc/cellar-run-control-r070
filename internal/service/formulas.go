@@ -39,6 +39,11 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 			return domain.NewError(domain.CodeFormulaNameConflict,
 				"a formula with the same normalized name already exists")
 		}
+		customFields, err := s.buildCustomFieldValues(domain.EntityFormula, input.CustomFields, *snapshot)
+		if err != nil {
+			return err
+		}
+		formula.CustomFields = customFields
 		snapshot.Formulas[formula.ID] = formula
 		snapshot.NameIndex[nameKey] = formula.ID
 		return nil
@@ -62,10 +67,49 @@ func (s *Service) SetFormulaSteps(
 		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityFormula,
+			formula.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		if err := formula.SetSteps(input.Steps); err != nil {
 			return err
 		}
 		formula.UpdatedAt = s.clock.Now()
+		snapshot.Formulas[id] = formula
+		updated = formula.Clone()
+		return nil
+	})
+	if err != nil {
+		return domain.Formula{}, err
+	}
+	return updated, nil
+}
+
+func (s *Service) PatchFormulaCustomFields(
+	id string,
+	input PatchCustomFieldsInput,
+) (domain.Formula, error) {
+	var updated domain.Formula
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		formula, ok := snapshot.Formulas[id]
+		if !ok {
+			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
+		}
+		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if formula.State != domain.FormulaDraft {
+			return domain.NewError(domain.CodeFormulaState,
+				"extension fields can only be modified on a draft formula")
+		}
+		values, err := s.patchCustomFieldValues(formula.CustomFields, input.Fields,
+			domain.EntityFormula, *snapshot)
+		if err != nil {
+			return err
+		}
+		formula.CustomFields = values
+		formula.UpdatedAt = s.clock.Now()
+		formula.Version++
 		snapshot.Formulas[id] = formula
 		updated = formula.Clone()
 		return nil
@@ -84,6 +128,10 @@ func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula,
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
 		}
 		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if err := domain.ValidateCustomFields(domain.EntityFormula,
+			formula.CustomFields, snapshot.ExtensionFields); err != nil {
 			return err
 		}
 		if err := formula.Approve(s.clock.Now()); err != nil {
@@ -107,6 +155,10 @@ func (s *Service) RetireFormula(id string, input VersionInput) (domain.Formula, 
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
 		}
 		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		if err := domain.ValidateCustomFields(domain.EntityFormula,
+			formula.CustomFields, snapshot.ExtensionFields); err != nil {
 			return err
 		}
 		for _, run := range snapshot.Runs {

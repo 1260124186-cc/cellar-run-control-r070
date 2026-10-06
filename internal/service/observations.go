@@ -12,6 +12,10 @@ func (s *Service) AppendObservation(
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		now := s.clock.Now()
 		observation := domain.GravityObservation{
 			RunID:        run.ID,
@@ -48,6 +52,10 @@ func (s *Service) BeginConditioning(
 		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		if err := run.BeginConditioning(s.clock.Now()); err != nil {
 			return err
 		}
@@ -75,6 +83,10 @@ func (s *Service) CompleteRun(
 		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
 			return err
 		}
+		if err := domain.ValidateCustomFields(domain.EntityRun,
+			run.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		formula, ok := snapshot.Formulas[run.FormulaID]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "attached formula was not found")
@@ -89,13 +101,17 @@ func (s *Service) CompleteRun(
 		if !ok {
 			return domain.NewError(domain.CodeVesselNotFound, "vessel was not found")
 		}
+		if err := domain.ValidateCustomFields(domain.EntityVessel,
+			vessel.CustomFields, snapshot.ExtensionFields); err != nil {
+			return err
+		}
 		if err := vessel.StartCleaning(run.ID, s.clock.Now()); err != nil {
 			return err
 		}
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
 		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updatedVessel = vessel.Clone()
 		return nil
 	})
 	if err != nil {

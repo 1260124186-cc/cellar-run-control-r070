@@ -7,8 +7,13 @@ import (
 )
 
 type createVesselRequest struct {
-	Code      string  `json:"code"`
-	CapacityL float64 `json:"capacity_liters"`
+	Code         string         `json:"code"`
+	CapacityL    float64        `json:"capacity_liters"`
+	CustomFields map[string]any `json:"custom_fields"`
+}
+
+type patchCustomFieldsRequest struct {
+	CustomFields map[string]*any `json:"custom_fields"`
 }
 
 func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
@@ -18,8 +23,9 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 			return
 		}
 		vessel, err := app.CreateVessel(service.CreateVesselInput{
-			Code:      body.Code,
-			CapacityL: body.CapacityL,
+			Code:         body.Code,
+			CapacityL:    body.CapacityL,
+			CustomFields: body.CustomFields,
 		})
 		if err != nil {
 			writeDomainError(response, err)
@@ -39,6 +45,24 @@ func registerVesselRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("GET /v1/vessels/{id}", func(response http.ResponseWriter, request *http.Request) {
 		vessel, err := app.GetVessel(request.PathValue("id"))
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, vessel)
+	})
+
+	mux.HandleFunc("PATCH /v1/vessels/{id}/custom-fields", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[patchCustomFieldsRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		vessel, err := app.PatchVesselCustomFields(request.PathValue("id"),
+			service.PatchCustomFieldsInput{ExpectedVersion: expected, Fields: body.CustomFields})
 		if err != nil {
 			writeDomainError(response, err)
 			return
