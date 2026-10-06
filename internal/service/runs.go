@@ -6,13 +6,13 @@ import (
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
 )
 
-func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error) {
+func (s *Service) CreateRun(input CreateRunInput) (RunView, error) {
 	now := s.clock.Now()
 	code := domain.NormalizeRunCode(input.Code)
 	if code == "" {
 		generated, err := generatedRunCode()
 		if err != nil {
-			return domain.FermentationRun{}, domain.NewError(domain.CodeStorage, err.Error())
+			return RunView{}, domain.NewError(domain.CodeStorage, err.Error())
 		}
 		code = generated
 	}
@@ -21,6 +21,7 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 		FormulaID:      input.FormulaID,
 		PlannedVolumeL: input.PlannedVolumeL,
 		Notes:          input.Notes,
+		CustomValues:   domain.CloneCustomValues(input.CustomValues),
 		State:          domain.RunPlanned,
 		Observations:   []domain.GravityObservation{},
 		Version:        1,
@@ -28,14 +29,15 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 		UpdatedAt:      now,
 	}
 	if err := run.Validate(); err != nil {
-		return domain.FermentationRun{}, err
+		return RunView{}, err
 	}
 	id, err := generateEntityID("run")
 	if err != nil {
-		return domain.FermentationRun{}, domain.NewError(domain.CodeStorage, err.Error())
+		return RunView{}, domain.NewError(domain.CodeStorage, err.Error())
 	}
 	run.ID = id
 
+	var created RunView
 	err = s.store.Execute(func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[run.FormulaID]
 		if !ok {
@@ -49,22 +51,57 @@ func (s *Service) CreateRun(input CreateRunInput) (domain.FermentationRun, error
 			return domain.NewError(domain.CodeRunConflict,
 				"a run with the same code already exists")
 		}
+		if err := domain.ValidateCustomValues(domain.ExtensionEntityRun,
+			snapshot.ExtensionFields, run.CustomValues, true); err != nil {
+			return err
+		}
 		snapshot.Runs[run.ID] = run.Clone()
 		snapshot.RunIndex[run.Code] = run.ID
+		created = runView(*snapshot, run.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, err
+		return RunView{}, err
 	}
-	return run.Clone(), nil
+	return created, nil
+}
+
+func (s *Service) UpdateRunCustomFields(
+	id string,
+	input UpdateCustomFieldsInput,
+) (RunView, error) {
+	var updated RunView
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		run, ok := snapshot.Runs[id]
+		if !ok {
+			return domain.NewError(domain.CodeRunNotFound, "run was not found")
+		}
+		if err := s.checkExpected(run.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		merged := domain.MergeCustomValues(run.CustomValues, input.Values)
+		if err := domain.ValidateCustomValues(domain.ExtensionEntityRun,
+			snapshot.ExtensionFields, merged, true); err != nil {
+			return err
+		}
+		if err := run.UpdateCustomValues(merged, s.clock.Now()); err != nil {
+			return err
+		}
+		snapshot.Runs[id] = run
+		updated = runView(*snapshot, run.Clone())
+		return nil
+	})
+	if err != nil {
+		return RunView{}, err
+	}
+	return updated, nil
 }
 
 func (s *Service) ReserveRun(
 	id string,
 	input ReserveRunInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
+) (RunVesselView, error) {
+	var updated RunVesselView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -89,22 +126,23 @@ func (s *Service) ReserveRun(
 		}
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
-		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updated = RunVesselView{
+			Run:    runView(*snapshot, run.Clone()),
+			Vessel: vesselView(*snapshot, vessel.Clone()),
+		}
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, domain.Vessel{}, err
+		return RunVesselView{}, err
 	}
-	return updatedRun, updatedVessel, nil
+	return updated, nil
 }
 
 func (s *Service) StartRun(
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
+) (RunVesselView, error) {
+	var updated RunVesselView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -128,22 +166,23 @@ func (s *Service) StartRun(
 		}
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
-		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updated = RunVesselView{
+			Run:    runView(*snapshot, run.Clone()),
+			Vessel: vesselView(*snapshot, vessel.Clone()),
+		}
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, domain.Vessel{}, err
+		return RunVesselView{}, err
 	}
-	return updatedRun, updatedVessel, nil
+	return updated, nil
 }
 
 func (s *Service) AbortRun(
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
+) (RunVesselView, error) {
+	var updated RunVesselView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -156,6 +195,7 @@ func (s *Service) AbortRun(
 		if err := run.Abort(s.clock.Now()); err != nil {
 			return err
 		}
+		var updatedVessel VesselView
 		if run.VesselID != nil {
 			vessel, ok := snapshot.Vessels[*run.VesselID]
 			if !ok {
@@ -169,40 +209,43 @@ func (s *Service) AbortRun(
 				return err
 			}
 			snapshot.Vessels[vessel.ID] = vessel
-			updatedVessel = vessel
+			updatedVessel = vesselView(*snapshot, vessel.Clone())
 		}
 		snapshot.Runs[id] = run.Clone()
-		updatedRun = run.Clone()
+		updated = RunVesselView{
+			Run:    runView(*snapshot, run.Clone()),
+			Vessel: updatedVessel,
+		}
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, domain.Vessel{}, err
+		return RunVesselView{}, err
 	}
-	return updatedRun, updatedVessel, nil
+	return updated, nil
 }
 
-func (s *Service) GetRun(id string) (domain.FermentationRun, error) {
-	var found domain.FermentationRun
+func (s *Service) GetRun(id string) (RunView, error) {
+	var found RunView
 	err := s.store.View(func(snapshot domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
 			return domain.NewError(domain.CodeRunNotFound, "run was not found")
 		}
-		found = run.Clone()
+		found = runView(snapshot, run.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, err
+		return RunView{}, err
 	}
 	return found, nil
 }
 
-func (s *Service) ListRuns() ([]domain.FermentationRun, error) {
-	var runs []domain.FermentationRun
+func (s *Service) ListRuns() ([]RunView, error) {
+	var runs []RunView
 	err := s.store.View(func(snapshot domain.Snapshot) error {
-		runs = make([]domain.FermentationRun, 0, len(snapshot.Runs))
+		runs = make([]RunView, 0, len(snapshot.Runs))
 		for _, run := range snapshot.Runs {
-			runs = append(runs, run.Clone())
+			runs = append(runs, runView(snapshot, run.Clone()))
 		}
 		return nil
 	})

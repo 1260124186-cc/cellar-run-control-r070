@@ -20,6 +20,7 @@ type FermentationRun struct {
 	VesselID       *string              `json:"vessel_id,omitempty"`
 	PlannedVolumeL float64              `json:"planned_volume_liters"`
 	Notes          string               `json:"notes,omitempty"`
+	CustomValues   map[string]any       `json:"custom_values,omitempty"`
 	State          RunState             `json:"state"`
 	StartedAt      *time.Time           `json:"started_at,omitempty"`
 	EndedAt        *time.Time           `json:"ended_at,omitempty"`
@@ -33,6 +34,7 @@ type FermentationRun struct {
 func (r FermentationRun) Clone() FermentationRun {
 	cloned := r
 	cloned.Observations = append([]GravityObservation(nil), r.Observations...)
+	cloned.CustomValues = CloneCustomValues(r.CustomValues)
 	if r.VesselID != nil {
 		value := *r.VesselID
 		cloned.VesselID = &value
@@ -64,6 +66,15 @@ func (r FermentationRun) Validate() error {
 		return FieldError(CodeInvalidInput, "notes",
 			"must not exceed 1000 characters")
 	}
+	return nil
+}
+
+func (r *FermentationRun) UpdateCustomValues(values map[string]any, now time.Time) error {
+	if r.State == RunCompleted || r.State == RunAborted {
+		return NewError(CodeRunState, "completed or aborted runs cannot change custom fields")
+	}
+	r.CustomValues = CloneCustomValues(values)
+	r.Version++
 	return nil
 }
 

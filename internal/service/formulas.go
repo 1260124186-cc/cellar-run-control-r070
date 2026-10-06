@@ -7,7 +7,7 @@ import (
 	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
 )
 
-func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error) {
+func (s *Service) CreateFormula(input CreateFormulaInput) (FormulaView, error) {
 	now := s.clock.Now()
 	formula := domain.Formula{
 		Name:                  input.Name,
@@ -18,6 +18,7 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 		MinimumDays:           input.MinimumDays,
 		MaximumDays:           input.MaximumDays,
 		Steps:                 []domain.FormulaStep{},
+		CustomValues:          domain.CloneCustomValues(input.CustomValues),
 		State:                 domain.FormulaDraft,
 		Version:               1,
 		CreatedAt:             now,
@@ -25,35 +26,41 @@ func (s *Service) CreateFormula(input CreateFormulaInput) (domain.Formula, error
 	}
 	formula.Normalize()
 	if err := formula.Validate(); err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
 	id, err := generateEntityID("formula")
 	if err != nil {
-		return domain.Formula{}, domain.NewError(domain.CodeStorage, err.Error())
+		return FormulaView{}, domain.NewError(domain.CodeStorage, err.Error())
 	}
 	formula.ID = id
 	nameKey := domain.NameKey(formula.Name)
 
+	var created FormulaView
 	err = s.store.Execute(func(snapshot *domain.Snapshot) error {
 		if _, exists := snapshot.NameIndex[nameKey]; exists {
 			return domain.NewError(domain.CodeFormulaNameConflict,
 				"a formula with the same normalized name already exists")
 		}
-		snapshot.Formulas[formula.ID] = formula
+		if err := domain.ValidateCustomValues(domain.ExtensionEntityFormula,
+			snapshot.ExtensionFields, formula.CustomValues, true); err != nil {
+			return err
+		}
+		snapshot.Formulas[formula.ID] = formula.Clone()
 		snapshot.NameIndex[nameKey] = formula.ID
+		created = formulaView(*snapshot, formula.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
-	return formula.Clone(), nil
+	return created, nil
 }
 
 func (s *Service) SetFormulaSteps(
 	id string,
 	input SetFormulaStepsInput,
-) (domain.Formula, error) {
-	var updated domain.Formula
+) (FormulaView, error) {
+	var updated FormulaView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
@@ -67,17 +74,48 @@ func (s *Service) SetFormulaSteps(
 		}
 		formula.UpdatedAt = s.clock.Now()
 		snapshot.Formulas[id] = formula
-		updated = formula.Clone()
+		updated = formulaView(*snapshot, formula.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
 	return updated, nil
 }
 
-func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula, error) {
-	var updated domain.Formula
+func (s *Service) UpdateFormulaCustomFields(
+	id string,
+	input UpdateCustomFieldsInput,
+) (FormulaView, error) {
+	var updated FormulaView
+	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
+		formula, ok := snapshot.Formulas[id]
+		if !ok {
+			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
+		}
+		if err := s.checkExpected(formula.Version, input.ExpectedVersion); err != nil {
+			return err
+		}
+		merged := domain.MergeCustomValues(formula.CustomValues, input.Values)
+		if err := domain.ValidateCustomValues(domain.ExtensionEntityFormula,
+			snapshot.ExtensionFields, merged, true); err != nil {
+			return err
+		}
+		if err := formula.UpdateCustomValues(merged, s.clock.Now()); err != nil {
+			return err
+		}
+		snapshot.Formulas[id] = formula
+		updated = formulaView(*snapshot, formula.Clone())
+		return nil
+	})
+	if err != nil {
+		return FormulaView{}, err
+	}
+	return updated, nil
+}
+
+func (s *Service) ApproveFormula(id string, input VersionInput) (FormulaView, error) {
+	var updated FormulaView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
@@ -90,17 +128,17 @@ func (s *Service) ApproveFormula(id string, input VersionInput) (domain.Formula,
 			return err
 		}
 		snapshot.Formulas[id] = formula
-		updated = formula.Clone()
+		updated = formulaView(*snapshot, formula.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
 	return updated, nil
 }
 
-func (s *Service) RetireFormula(id string, input VersionInput) (domain.Formula, error) {
-	var updated domain.Formula
+func (s *Service) RetireFormula(id string, input VersionInput) (FormulaView, error) {
+	var updated FormulaView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
@@ -120,37 +158,37 @@ func (s *Service) RetireFormula(id string, input VersionInput) (domain.Formula, 
 			return err
 		}
 		snapshot.Formulas[id] = formula
-		updated = formula.Clone()
+		updated = formulaView(*snapshot, formula.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
 	return updated, nil
 }
 
-func (s *Service) GetFormula(id string) (domain.Formula, error) {
-	var found domain.Formula
+func (s *Service) GetFormula(id string) (FormulaView, error) {
+	var found FormulaView
 	err := s.store.View(func(snapshot domain.Snapshot) error {
 		formula, ok := snapshot.Formulas[id]
 		if !ok {
 			return domain.NewError(domain.CodeFormulaNotFound, "formula was not found")
 		}
-		found = formula.Clone()
+		found = formulaView(snapshot, formula.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.Formula{}, err
+		return FormulaView{}, err
 	}
 	return found, nil
 }
 
-func (s *Service) ListFormulas() ([]domain.Formula, error) {
-	var formulas []domain.Formula
+func (s *Service) ListFormulas() ([]FormulaView, error) {
+	var formulas []FormulaView
 	err := s.store.View(func(snapshot domain.Snapshot) error {
-		formulas = make([]domain.Formula, 0, len(snapshot.Formulas))
+		formulas = make([]FormulaView, 0, len(snapshot.Formulas))
 		for _, formula := range snapshot.Formulas {
-			formulas = append(formulas, formula.Clone())
+			formulas = append(formulas, formulaView(snapshot, formula.Clone()))
 		}
 		return nil
 	})

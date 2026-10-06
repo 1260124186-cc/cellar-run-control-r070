@@ -19,6 +19,10 @@
     {
       "workflow_id": "observations-completion",
       "command": "go run ./cmd/fermentctl check observations-completion"
+    },
+    {
+      "workflow_id": "extension-field-registration",
+      "command": "go run ./cmd/fermentctl check extension-field-registration"
     }
   ]
 }

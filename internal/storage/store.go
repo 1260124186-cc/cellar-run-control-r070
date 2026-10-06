@@ -78,6 +78,12 @@ func normalizeSnapshot(value domain.Snapshot) (domain.Snapshot, error) {
 	if value.RunIndex == nil {
 		value.RunIndex = map[string]string{}
 	}
+	if value.ExtensionFields == nil {
+		value.ExtensionFields = map[string]domain.ExtensionField{}
+	}
+	if value.ExtensionNameIdx == nil {
+		value.ExtensionNameIdx = map[string]string{}
+	}
 	if err := validateIndexes(value); err != nil {
 		return domain.Snapshot{}, err
 	}
@@ -118,7 +124,53 @@ func validateIndexes(value domain.Snapshot) error {
 		}
 		expectedRuns[run.Code] = id
 	}
-	return compareIndexes("run code", value.RunIndex, expectedRuns)
+	if err := compareIndexes("run code", value.RunIndex, expectedRuns); err != nil {
+		return err
+	}
+	return validateExtensions(value)
+}
+
+func validateExtensions(value domain.Snapshot) error {
+	expectedActive := map[string]string{}
+	for id, field := range value.ExtensionFields {
+		if field.ID != id {
+			return fmt.Errorf("extension field index does not match its definition")
+		}
+		field.Normalize()
+		if err := field.Validate(); err != nil {
+			return fmt.Errorf("extension field %s is invalid: %w", id, err)
+		}
+		value.ExtensionFields[id] = field
+		key := domain.ExtensionFieldIndexKey(field.EntityType, field.Name)
+		if field.State == domain.ExtensionFieldActive {
+			if existing, found := expectedActive[key]; found && existing != id {
+				return fmt.Errorf("active extension field names must be unique for each entity type")
+			}
+			expectedActive[key] = id
+		}
+	}
+	if err := compareIndexes("extension field name", value.ExtensionNameIdx, expectedActive); err != nil {
+		return err
+	}
+	for _, formula := range value.Formulas {
+		if err := domain.ValidateStoredCustomValues(
+			domain.ExtensionEntityFormula, value.ExtensionFields, formula.CustomValues); err != nil {
+			return fmt.Errorf("formula %s contains an invalid custom value: %w", formula.ID, err)
+		}
+	}
+	for _, vessel := range value.Vessels {
+		if err := domain.ValidateStoredCustomValues(
+			domain.ExtensionEntityVessel, value.ExtensionFields, vessel.CustomValues); err != nil {
+			return fmt.Errorf("vessel %s contains an invalid custom value: %w", vessel.ID, err)
+		}
+	}
+	for _, run := range value.Runs {
+		if err := domain.ValidateStoredCustomValues(
+			domain.ExtensionEntityRun, value.ExtensionFields, run.CustomValues); err != nil {
+			return fmt.Errorf("run %s contains an invalid custom value: %w", run.ID, err)
+		}
+	}
+	return nil
 }
 
 func compareIndexes(label string, actual, expected map[string]string) error {

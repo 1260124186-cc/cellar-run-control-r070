@@ -6,13 +6,20 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
+
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/clock"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/httpapi"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/service"
+	"github.com/1260124186-cc/solo-0016-cellar-run-control/internal/storage"
 )
 
 type client struct {
 	baseURL string
 	http    *http.Client
+	server  *httptest.Server
 }
 
 type response struct {
@@ -27,6 +34,32 @@ func newClient(baseURL string) *client {
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+func newClientForServer(server *httptest.Server) *client {
+	client := newClient(server.URL)
+	client.server = server
+	return client
+}
+
+func (c *client) close() {
+	if c.server != nil {
+		c.server.Close()
+	}
+}
+
+func (c *client) reopen(dataDir string) error {
+	if c.server != nil {
+		c.server.Close()
+	}
+	store, err := storage.Open(dataDir)
+	if err != nil {
+		return err
+	}
+	app := service.New(store, clock.System{})
+	c.server = httptest.NewServer(httpapi.NewHandler(app))
+	c.baseURL = strings.TrimRight(c.server.URL, "/")
+	return nil
 }
 
 func (c *client) call(

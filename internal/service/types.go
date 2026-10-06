@@ -14,6 +14,12 @@ type CreateFormulaInput struct {
 	MaxFermentationTempC  float64
 	MinimumDays           int
 	MaximumDays           int
+	CustomValues          map[string]any
+}
+
+type UpdateCustomFieldsInput struct {
+	ExpectedVersion *int64
+	Values          map[string]any
 }
 
 type SetFormulaStepsInput struct {
@@ -25,9 +31,24 @@ type VersionInput struct {
 	ExpectedVersion *int64
 }
 
+type CreateExtensionFieldInput struct {
+	EntityType domain.ExtensionEntity
+	Name       string
+	Type       domain.ExtensionFieldType
+	Required   bool
+}
+
+type UpdateExtensionFieldInput struct {
+	ExpectedVersion *int64
+	Name            string
+	Type            domain.ExtensionFieldType
+	Required        bool
+}
+
 type CreateVesselInput struct {
-	Code      string
-	CapacityL float64
+	Code         string
+	CapacityL    float64
+	CustomValues map[string]any
 }
 
 type CreateRunInput struct {
@@ -35,6 +56,7 @@ type CreateRunInput struct {
 	FormulaID      string
 	PlannedVolumeL float64
 	Notes          string
+	CustomValues   map[string]any
 }
 
 type ReserveRunInput struct {

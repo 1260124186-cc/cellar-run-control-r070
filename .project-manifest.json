@@ -113,6 +113,26 @@
         "domain",
         "storage"
       ]
+    },
+    {
+      "id": "extension-field-registration",
+      "name": "Register and evolve entity extension fields",
+      "entry": "POST /v1/extension-fields",
+      "steps": [
+        "define required custom fields for formulas, vessels, and runs",
+        "validate values during create and custom-field update",
+        "rename or deactivate definitions while preserving historical values",
+        "re-read detail and list data after a service restart"
+      ],
+      "success": "all entity views resolve values through the current registry and inactive historical values remain readable",
+      "failure": "returns a stable duplicate, state, type-in-use, or revision error without partial writes",
+      "verification": "the check issues real HTTP requests and restarts the handler against the same snapshot directory",
+      "module_ids": [
+        "httpapi",
+        "service",
+        "domain",
+        "storage"
+      ]
     }
   ]
 }

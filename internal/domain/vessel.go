@@ -13,14 +13,25 @@ const (
 )
 
 type Vessel struct {
-	ID          string      `json:"id"`
-	Code        string      `json:"code"`
-	CapacityL   float64     `json:"capacity_liters"`
-	State       VesselState `json:"state"`
-	ActiveRunID *string     `json:"active_run_id,omitempty"`
-	Version     int64       `json:"version"`
-	CreatedAt   time.Time   `json:"created_at"`
-	UpdatedAt   time.Time   `json:"updated_at"`
+	ID           string         `json:"id"`
+	Code         string         `json:"code"`
+	CapacityL    float64        `json:"capacity_liters"`
+	State        VesselState    `json:"state"`
+	ActiveRunID  *string        `json:"active_run_id,omitempty"`
+	CustomValues map[string]any `json:"custom_values,omitempty"`
+	Version      int64          `json:"version"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+func (v Vessel) Clone() Vessel {
+	cloned := v
+	cloned.CustomValues = CloneCustomValues(v.CustomValues)
+	if v.ActiveRunID != nil {
+		value := *v.ActiveRunID
+		cloned.ActiveRunID = &value
+	}
+	return cloned
 }
 
 func (v Vessel) Validate() error {
@@ -31,6 +42,15 @@ func (v Vessel) Validate() error {
 		return FieldError(CodeInvalidInput, "capacity_liters",
 			"must be between 10 and 5000 liters")
 	}
+	return nil
+}
+
+func (v *Vessel) UpdateCustomValues(values map[string]any, now time.Time) error {
+	if v.State == VesselRetired {
+		return NewError(CodeVesselState, "a retired vessel cannot change custom fields")
+	}
+	v.CustomValues = CloneCustomValues(values)
+	v.Version++
 	return nil
 }
 

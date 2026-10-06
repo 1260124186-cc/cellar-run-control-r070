@@ -24,8 +24,8 @@ func Run(name string) error {
 	}
 	app := service.New(store, clock.System{})
 	server := httptest.NewServer(httpapi.NewHandler(app))
-	defer server.Close()
-	api := newClient(server.URL)
+	api := newClientForServer(server)
+	defer api.close()
 
 	switch name {
 	case "formula-approval":
@@ -38,6 +38,10 @@ func Run(name string) error {
 		}
 	case "observations-completion":
 		if err := observationsCompletion(api); err != nil {
+			return err
+		}
+	case "extension-field-registration":
+		if err := extensionFieldRegistration(api, dataDir); err != nil {
 			return err
 		}
 	default:

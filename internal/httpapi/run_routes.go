@@ -8,10 +8,11 @@ import (
 )
 
 type createRunRequest struct {
-	Code           string  `json:"code"`
-	FormulaID      string  `json:"formula_id"`
-	PlannedVolumeL float64 `json:"planned_volume_liters"`
-	Notes          string  `json:"notes"`
+	Code           string         `json:"code"`
+	FormulaID      string         `json:"formula_id"`
+	PlannedVolumeL float64        `json:"planned_volume_liters"`
+	Notes          string         `json:"notes"`
+	CustomFields   map[string]any `json:"custom_fields"`
 }
 
 type reserveRunRequest struct {
@@ -37,6 +38,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 			FormulaID:      body.FormulaID,
 			PlannedVolumeL: body.PlannedVolumeL,
 			Notes:          body.Notes,
+			CustomValues:   body.CustomFields,
 		})
 		if err != nil {
 			writeDomainError(response, err)
@@ -63,6 +65,24 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		writeJSON(response, http.StatusOK, run)
 	})
 
+	mux.HandleFunc("PATCH /v1/runs/{id}/custom-fields", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[updateCustomFieldsRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		run, err := app.UpdateRunCustomFields(request.PathValue("id"),
+			service.UpdateCustomFieldsInput{ExpectedVersion: expected, Values: body.CustomFields})
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, run)
+	})
+
 	mux.HandleFunc("POST /v1/runs/{id}/reserve", func(response http.ResponseWriter, request *http.Request) {
 		body, err := decodeJSON[reserveRunRequest](response, request)
 		if !handleDecode(response, err) {
@@ -72,7 +92,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.ReserveRun(request.PathValue("id"), service.ReserveRunInput{
+		pair, err := app.ReserveRun(request.PathValue("id"), service.ReserveRunInput{
 			ExpectedVersion: expected,
 			VesselID:        body.VesselID,
 		})
@@ -80,7 +100,7 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 			writeDomainError(response, err)
 			return
 		}
-		writeJSON(response, http.StatusOK, map[string]any{"run": run, "vessel": vessel})
+		writeJSON(response, http.StatusOK, pair)
 	})
 
 	mux.HandleFunc("POST /v1/runs/{id}/start", func(response http.ResponseWriter, request *http.Request) {
@@ -88,13 +108,13 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.StartRun(request.PathValue("id"),
+		pair, err := app.StartRun(request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
 			return
 		}
-		writeJSON(response, http.StatusOK, map[string]any{"run": run, "vessel": vessel})
+		writeJSON(response, http.StatusOK, pair)
 	})
 
 	mux.HandleFunc("POST /v1/runs/{id}/observations", func(response http.ResponseWriter, request *http.Request) {
@@ -135,13 +155,13 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.CompleteRun(request.PathValue("id"),
+		pair, err := app.CompleteRun(request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
 			return
 		}
-		writeJSON(response, http.StatusOK, map[string]any{"run": run, "vessel": vessel})
+		writeJSON(response, http.StatusOK, pair)
 	})
 
 	mux.HandleFunc("POST /v1/runs/{id}/abort", func(response http.ResponseWriter, request *http.Request) {
@@ -149,12 +169,12 @@ func registerRunRoutes(mux *http.ServeMux, app *service.Service) {
 		if !handleDecode(response, err) {
 			return
 		}
-		run, vessel, err := app.AbortRun(request.PathValue("id"),
+		pair, err := app.AbortRun(request.PathValue("id"),
 			service.VersionInput{ExpectedVersion: expected})
 		if err != nil {
 			writeDomainError(response, err)
 			return
 		}
-		writeJSON(response, http.StatusOK, map[string]any{"run": run, "vessel": vessel})
+		writeJSON(response, http.StatusOK, pair)
 	})
 }

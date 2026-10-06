@@ -5,8 +5,8 @@ import "github.com/1260124186-cc/solo-0016-cellar-run-control/internal/domain"
 func (s *Service) AppendObservation(
 	id string,
 	input ObservationInput,
-) (domain.FermentationRun, error) {
-	var updated domain.FermentationRun
+) (RunView, error) {
+	var updated RunView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -26,11 +26,11 @@ func (s *Service) AppendObservation(
 			return err
 		}
 		snapshot.Runs[id] = run.Clone()
-		updated = run.Clone()
+		updated = runView(*snapshot, run.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, err
+		return RunView{}, err
 	}
 	return updated, nil
 }
@@ -38,8 +38,8 @@ func (s *Service) AppendObservation(
 func (s *Service) BeginConditioning(
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, error) {
-	var updated domain.FermentationRun
+) (RunView, error) {
+	var updated RunView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -52,11 +52,11 @@ func (s *Service) BeginConditioning(
 			return err
 		}
 		snapshot.Runs[id] = run.Clone()
-		updated = run.Clone()
+		updated = runView(*snapshot, run.Clone())
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, err
+		return RunView{}, err
 	}
 	return updated, nil
 }
@@ -64,9 +64,8 @@ func (s *Service) BeginConditioning(
 func (s *Service) CompleteRun(
 	id string,
 	input VersionInput,
-) (domain.FermentationRun, domain.Vessel, error) {
-	var updatedRun domain.FermentationRun
-	var updatedVessel domain.Vessel
+) (RunVesselView, error) {
+	var updated RunVesselView
 	err := s.store.Execute(func(snapshot *domain.Snapshot) error {
 		run, ok := snapshot.Runs[id]
 		if !ok {
@@ -94,12 +93,14 @@ func (s *Service) CompleteRun(
 		}
 		snapshot.Runs[id] = run.Clone()
 		snapshot.Vessels[vessel.ID] = vessel
-		updatedRun = run.Clone()
-		updatedVessel = vessel
+		updated = RunVesselView{
+			Run:    runView(*snapshot, run.Clone()),
+			Vessel: vesselView(*snapshot, vessel.Clone()),
+		}
 		return nil
 	})
 	if err != nil {
-		return domain.FermentationRun{}, domain.Vessel{}, err
+		return RunVesselView{}, err
 	}
-	return updatedRun, updatedVessel, nil
+	return updated, nil
 }

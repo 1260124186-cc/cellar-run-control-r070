@@ -26,8 +26,8 @@ deferred to a later engineering task.
 
 A formula contains an identifier, normalized name, style label, target original
 gravity, target final gravity, maximum fermentation temperature, minimum and
-maximum planned days, ordered process steps, lifecycle state, version, and
-timestamps.
+maximum planned days, ordered process steps, custom extension values, lifecycle
+state, version, and timestamps.
 
 States are `draft`, `approved`, and `retired`.
 
@@ -48,7 +48,8 @@ States are `draft`, `approved`, and `retired`.
 ### Vessel
 
 A vessel contains an identifier, unique display code, capacity in liters,
-lifecycle state, active run identifier, version, and timestamps.
+custom extension values, lifecycle state, active run identifier, version, and
+timestamps.
 
 States are `available`, `reserved`, `in_use`, `cleaning`, and `retired`.
 
@@ -64,8 +65,9 @@ States are `available`, `reserved`, `in_use`, `cleaning`, and `retired`.
 ### FermentationRun
 
 A run contains an identifier, unique run code, an approved formula identifier,
-an optional vessel identifier, planned volume, notes, lifecycle state,
-timetable, ordered observations, final metrics, version, and timestamps.
+an optional vessel identifier, planned volume, notes, custom extension values,
+lifecycle state, timetable, ordered observations, final metrics, version, and
+timestamps.
 
 States are `planned`, `reserved`, `fermenting`, `conditioning`, `completed`,
 and `aborted`.
@@ -84,6 +86,28 @@ and `aborted`.
   cleaning.
 - Completed and aborted runs are immutable.
 - A run can carry at most 500 observations.
+
+### ExtensionField
+
+Supervisors register custom fields for formulas, vessels, or runs. A definition
+contains a stable identifier, target entity type, display name, value type,
+required flag, active/inactive state, version, and timestamps.
+
+- Value types are `text`, `number`, and `boolean`.
+- Active names are unique after case folding and whitespace normalization within
+  one target entity type.
+- Definitions are deactivated rather than deleted. A deactivated name may be
+  registered again as a new stable field.
+- Renaming and changing the required flag are versioned. Field updates accept
+  `X-Expected-Version` and all writes are serialized by the snapshot store.
+- A type can change only when no formula, vessel, or run stores a value for that
+  stable field identifier. Existing values are never converted or overwritten.
+- Historical entities store values by field identifier. Detail and list views
+  resolve every stored value through the persisted registry, including inactive
+  definitions. Active definitions are also shown with `null` when an older
+  entity does not yet have a value.
+- Create and custom-field update requests validate against the active registry.
+  Required active fields must be non-null; null removes an optional value.
 
 ### GravityObservation
 
@@ -149,6 +173,28 @@ transitions return stable failures without changing persisted state.
 
 This path crosses HTTP protocol handling, application orchestration, numeric
 domain rules, and snapshot storage.
+
+### 4. Extension Field Registration
+
+Public entry points are:
+
+- `POST /v1/extension-fields`
+- `GET /v1/extension-fields`
+- `PUT /v1/extension-fields/{id}`
+- `POST /v1/extension-fields/{id}/deactivate`
+- `POST /v1/formulas`, `POST /v1/vessels`, `POST /v1/runs`
+- `PATCH /v1/formulas/{id}/custom-fields`
+- `PATCH /v1/vessels/{id}/custom-fields`
+- `PATCH /v1/runs/{id}/custom-fields`
+- Entity detail and list routes
+
+The supervisor registers fields, creates and updates entities with typed
+values, renames or deactivates a definition, and re-reads the same historical
+data in detail and list responses. Duplicate names, inactive-field writes,
+wrong JSON types, missing required values, stale definition versions, and type
+changes blocked by stored values return stable failures without partial writes.
+The check also restarts the HTTP service against the same snapshot directory
+and verifies that detail and list entries still use the persisted registry.
 
 ## Modules
 
@@ -217,6 +263,7 @@ behavior, and exit without external services:
 - `go run ./cmd/fermentctl check formula-approval`
 - `go run ./cmd/fermentctl check vessel-run-lifecycle`
 - `go run ./cmd/fermentctl check observations-completion`
+- `go run ./cmd/fermentctl check extension-field-registration`
 
 ## Scope Limits
 

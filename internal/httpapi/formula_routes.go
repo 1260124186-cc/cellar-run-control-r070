@@ -8,17 +8,22 @@ import (
 )
 
 type createFormulaRequest struct {
-	Name                  string  `json:"name"`
-	Style                 string  `json:"style"`
-	TargetOriginalGravity float64 `json:"target_original_gravity"`
-	TargetFinalGravity    float64 `json:"target_final_gravity"`
-	MaxFermentationTempC  float64 `json:"max_fermentation_temp_c"`
-	MinimumDays           int     `json:"minimum_days"`
-	MaximumDays           int     `json:"maximum_days"`
+	Name                  string         `json:"name"`
+	Style                 string         `json:"style"`
+	TargetOriginalGravity float64        `json:"target_original_gravity"`
+	TargetFinalGravity    float64        `json:"target_final_gravity"`
+	MaxFermentationTempC  float64        `json:"max_fermentation_temp_c"`
+	MinimumDays           int            `json:"minimum_days"`
+	MaximumDays           int            `json:"maximum_days"`
+	CustomFields          map[string]any `json:"custom_fields"`
 }
 
 type setStepsRequest struct {
 	Steps []domain.FormulaStep `json:"steps"`
+}
+
+type updateCustomFieldsRequest struct {
+	CustomFields map[string]any `json:"custom_fields"`
 }
 
 func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
@@ -35,6 +40,7 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 			MaxFermentationTempC:  body.MaxFermentationTempC,
 			MinimumDays:           body.MinimumDays,
 			MaximumDays:           body.MaximumDays,
+			CustomValues:          body.CustomFields,
 		})
 		if err != nil {
 			writeDomainError(response, err)
@@ -54,6 +60,24 @@ func registerFormulaRoutes(mux *http.ServeMux, app *service.Service) {
 
 	mux.HandleFunc("GET /v1/formulas/{id}", func(response http.ResponseWriter, request *http.Request) {
 		formula, err := app.GetFormula(request.PathValue("id"))
+		if err != nil {
+			writeDomainError(response, err)
+			return
+		}
+		writeJSON(response, http.StatusOK, formula)
+	})
+
+	mux.HandleFunc("PATCH /v1/formulas/{id}/custom-fields", func(response http.ResponseWriter, request *http.Request) {
+		body, err := decodeJSON[updateCustomFieldsRequest](response, request)
+		if !handleDecode(response, err) {
+			return
+		}
+		expected, err := expectedVersion(request)
+		if !handleDecode(response, err) {
+			return
+		}
+		formula, err := app.UpdateFormulaCustomFields(request.PathValue("id"),
+			service.UpdateCustomFieldsInput{ExpectedVersion: expected, Values: body.CustomFields})
 		if err != nil {
 			writeDomainError(response, err)
 			return

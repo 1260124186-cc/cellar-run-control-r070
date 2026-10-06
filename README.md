@@ -70,6 +70,7 @@ Formula workflow:
 - `POST /v1/formulas`
 - `GET /v1/formulas`
 - `GET /v1/formulas/{id}`
+- `PATCH /v1/formulas/{id}/custom-fields`
 - `PUT /v1/formulas/{id}/steps`
 - `POST /v1/formulas/{id}/approve`
 - `POST /v1/formulas/{id}/retire`
@@ -79,6 +80,7 @@ Vessel workflow:
 - `POST /v1/vessels`
 - `GET /v1/vessels`
 - `GET /v1/vessels/{id}`
+- `PATCH /v1/vessels/{id}/custom-fields`
 - `POST /v1/vessels/{id}/finish-cleaning`
 - `POST /v1/vessels/{id}/retire`
 
@@ -87,12 +89,44 @@ Run workflow:
 - `POST /v1/runs`
 - `GET /v1/runs`
 - `GET /v1/runs/{id}`
+- `PATCH /v1/runs/{id}/custom-fields`
 - `POST /v1/runs/{id}/reserve`
 - `POST /v1/runs/{id}/start`
 - `POST /v1/runs/{id}/observations`
 - `POST /v1/runs/{id}/conditioning`
 - `POST /v1/runs/{id}/complete`
 - `POST /v1/runs/{id}/abort`
+
+Extension field registration:
+
+- `POST /v1/extension-fields`
+- `GET /v1/extension-fields?entity_type=formula|vessel|run`
+- `PUT /v1/extension-fields/{id}`
+- `POST /v1/extension-fields/{id}/deactivate`
+
+Supervisors register custom fields separately for formulas, vessels, and runs.
+Each definition has a stable ID, normalized unique active name per entity type,
+type (`text`, `number`, or `boolean`), required flag, version, and active or
+inactive state. Create requests and custom-field updates provide values as:
+
+```json
+{
+  "custom_fields": {
+    "extfield_...": "Grain batch 2026-10"
+  }
+}
+```
+
+Detail and list responses always use the persisted definition registry to render
+`custom_fields` with the field ID, current name, type, required flag, state, and
+stored value. Required active fields must be present when an entity is created
+or when custom fields are modified. `null` clears an optional field. Field
+definitions can be renamed or made required/optional, but a type change is
+rejected while any entity still stores a value for that stable field ID.
+Deactivation never deletes the definition or historical values; the same
+display name can then be registered as a new field. Draft formulas, non-retired
+vessels, and non-terminal runs accept custom-field updates; approved/retired
+formulas, retired vessels, and completed/aborted runs remain immutable.
 
 Writes accept an optional `X-Expected-Version` header. Errors use a stable
 shape:
@@ -115,6 +149,7 @@ Run each production workflow check separately:
 go run ./cmd/fermentctl check formula-approval
 go run ./cmd/fermentctl check vessel-run-lifecycle
 go run ./cmd/fermentctl check observations-completion
+go run ./cmd/fermentctl check extension-field-registration
 ```
 
 Each check creates a temporary snapshot directory, starts the real HTTP
